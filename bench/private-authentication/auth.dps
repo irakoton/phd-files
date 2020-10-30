@@ -1,0 +1,130 @@
+/* Private Authentication Protocol
+
+ 1. A -> B: {Na, pub(A)}pub(B)
+ 2. B -> A: {Na, Nb, pub(B)}pub(A) if B wants to communicate with A
+            {Nb}pub(B) otherwise
+*/
+
+/* **************************************************
+  Property verified in this file (authentication):
+  "if A has nonce Na and accepts nonce Nb
+  then a successful session of B with nonce
+  Nb previously accepted Na"
+************************************************** */
+
+
+
+// symmetric encryption.
+// Cryptographic assumptions: perfect, except that not key concealing
+fun aenc/3.
+fun pk/1.
+fun sk/1 [private].
+reduc adec(aenc(x,y,pk(z)),z) -> x.
+reduc getID(pk(sk(id))) -> id.
+
+// weakening the assumptions on aenc: make it possible to test ciphers
+const ok.
+reduc test(aenc(x,y,pk(z))) -> ok.
+
+// weakening the assumptions on aenc: not key concealing
+// NB: subsumes the previous equation
+reduc get(aenc(x,y,pk(z))) -> pk(z).
+
+free c,ck,ca,cb,event_ch,data_ch. // channel
+free verify_ch [private].
+
+
+// oracle for generating identities
+let Keygen = new id; out(ck,pk(sk(id))).
+
+// role of A. Arguments:
+// c: channel, s: secret key, p: public key of the recipient, n: nonce
+let A(c,s,p,n) =
+  new r; out(c,aenc((n,pk(s)),r,p));
+  in(c,x);
+  let (=n,y,=p) = adec(x,s) in
+  0. // end of the session, accepting nonce y
+
+
+// same process as A but only outputs the final event after confirmation on a
+// (meta) secured channel that B completed a session with the same nonces
+let A_check(c,s,p,n) =
+  new r; out(c,aenc((n,pk(s)),r,p));
+  in(c,x);
+  let (=n,y,=p) = adec(x,s) in
+  in(verify_ch, resB); // verification that the data is in sync with B
+  let (=pk(s),=p,=n,=y) = resB in
+  out(event_ch, resB). // this time, session succeeds only if in sync with B
+
+
+// same as above but the result received from B is not checked
+let A_dummy(c,s,p,n) =
+  new r; out(c,aenc((n,pk(s)),r,p));
+  in(c,x);
+  let (=n,y,=p) = adec(x,s) in
+  in(verify_ch, resB); // dummy input: not verified in this process
+  out(event_ch, (pk(s),p,n,y)). // end of the session, accepting nonce y
+
+// role of B. Arguments:
+// c: channel, s: secret key, p: public key of the accepted connection, n: nonce
+let B(c,s,p,n) =
+  in(c,x);
+  let (y,=p) = adec(x,s) in
+    // accepting connection (nonce of A is supposedly y)
+    new r; out(c,aenc((y,n,pk(s)),r,p))
+  else
+    // refusing connection
+    new r; out(c,aenc(n,r,pk(s))). // decoy message
+
+let B_check(c,s,p,n) =
+  in(c,x);
+  let (y,=p) = adec(x,s) in
+    // accepting connection (nonce of A is supposedly y)
+    new r; out(c,aenc((y,n,pk(s)),r,p));
+    out(verify_ch, (p,pk(s),y,n)) // [meta] sends verification of session data
+  else
+    // refusing connection
+    new r; out(c,aenc(n,r,pk(s))). // decoy message
+
+
+const IDA,IDB.
+let session =
+  in(data_ch,data); // the adversary chooses the session data
+  let (ida,idb) = data in
+  if (ida,idb) = (IDA,IDB) then 0 else // this discards the attack consisting of confusing two parallel sessions between A and B
+  new Na; new Nb;
+  (
+    A(ca,sk(ida),pk(sk(idb)),Na) |
+    B(cb,sk(idb),pk(sk(ida)),Nb)
+  ).
+
+let session_verify =
+  new Na; new Nb;
+  (
+    A_check(ca,sk(IDA),pk(sk(IDB)),Na) |
+    B_check(cb,sk(IDB),pk(sk(IDA)),Nb)
+  ).
+
+let session_dummy =
+  new Na; new Nb;
+  (
+    A_dummy(ca,sk(IDA),pk(sk(IDB)),Na) |
+    B_check(cb,sk(IDB),pk(sk(IDA)),Nb)
+  ).
+
+// 1 session
+query session_equiv(session_dummy,session_verify). // <1s
+
+// 2 sessions
+let P_2 =
+  !^2 Keygen | !^1 session | session_dummy.
+let Pcheck_2 =
+  !^2 Keygen | !^1 session | session_verify.
+query session_equiv(P_2,Pcheck_2). // <1s
+
+// 3 sessions
+let P_3 =
+  !^4 Keygen | !^2 session | session_dummy.
+let Pcheck_3 =
+  !^4 Keygen | !^2 session | session_verify.
+query session_equiv(P_3,Pcheck_3). // 2min 25s

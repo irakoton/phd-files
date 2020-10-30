@@ -1,8 +1,0 @@
-fun h/2.
-const left [private].
-reduc get(h(x,y),left) -> x.
-
-const d [private]. // d is not used but the internal error disappears when this line is removed
-
-let P = let b = get(left,left) in 0.
-query trace_equiv(P,P).
