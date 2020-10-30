@@ -1,0 +1,278 @@
+/*******************
+****** LOCKS *******
+*******************/
+
+fun public_lock/1. // public_lock(k) is a lock that can only be opened by key k
+fun private_key/1 [private]. // private_key(id) is the key of the agent id
+fun lock/2. // lock(x,l) models a message x locked in a chest with lock l
+
+// models that unlocking a chest with the right key gives its content
+reduc unlock(lock(x,public_lock(k)),k) -> x.
+
+/*******************
+****** POISON ******
+*******************/
+
+// a meta model of the poison: poison(cake) models a cake that has been poisoned
+fun poison/1.
+const ok.
+reduc isPoisoned(poison(cake)) -> ok.
+const KO. // when this token is sent, it means a client ate poison
+
+
+/*******************
+******* MISC *******
+*******************/
+
+const IsabelleID. // the identity of Isabelle
+free c,d,o,o',data_ch,id_ch. // communication channels
+
+// the organisation that generates public locks (here, one) and reveals it
+let Organisation =
+  new id;
+  out(o,public_lock(private_key(id))).
+
+// models the fact that the correspondance id -> public lock is public
+reduc getID(public_lock(private_key(id))) -> id.
+
+
+/************************************************************
+*********** BROKEN VERSION OF THE PROTOCOL (V3) *************
+************************************************************/
+
+
+// description of the process followed by Isabelle to sell a cake to a client
+// with public lock l
+let Isabelle(cake,l) =
+  if isPoisoned(cake) = ok then 0 else
+  in(d,x); // receives the initiation message (locked password + id sender)
+  let (chest,=l) = x in // receives a locked chest + a client name
+  let password = unlock(chest,private_key(IsabelleID)) in // unlocking the chest
+  out(d,lock((password,cake),l)). // sends back the password with the cake
+
+// same process but assuming only non-compromised clients can order a cake.
+// This is modelled by input an identity id instead of public lock, and using
+// public_lock(private_key(id)) to seal the answer: compromised keys are not of
+// this form, hence the limitation
+let IsabelleTrust(cake,id) =
+  if isPoisoned(cake) = ok then 0 else
+  in(d,x);
+  let (chest,=id) = x in // receives a locked chest + a client name
+  let password = unlock(chest,private_key(IsabelleID)) in // unlocking the chest
+  out(d,lock((password,cake),public_lock(private_key(id)))).
+
+// description of the process followed by a client to buy a cake
+let Client(id) =
+  let k = private_key(id) in // the key of the client
+  let IL = public_lock(private_key(IsabelleID)) in // the lock of Isabelle
+  new password; // the unpredictable password of the client
+  out(c,(lock(password,IL),id)); // sending the initiation message + id in clear
+  in(c,x); // receiving the response from the backery
+  let (=password,cake) = unlock(x,k) in
+  if isPoisoned(cake) = ok then out(c,KO). // client accepted a poisoned cake
+
+// an alternative version of the client that never eats the cake
+let ImmuneClient(id) =
+  let k = private_key(id) in // the key of the client
+  let IL = public_lock(private_key(IsabelleID)) in // the lock of Isabelle
+  new password; // the unpredictable password of the client
+  out(c,(lock(password,IL),id)); // sending the initiation message
+  in(c,x). // receiving the response from the backery but doing nothing with it
+
+
+/*****************************
+model of the security property
+******************************/
+
+let RoleTrust = // role chosen by the adversary (normal client)
+  in(id_ch,id);
+  if id = IsabelleID then
+    in(data_ch,x);
+    let (cake,client) = x in IsabelleTrust(cake,client) else 0
+  else Client(id).
+
+let ImmuneRoleTrust = // role chosen by the adversary (careful client)
+  in(id_ch,id);
+  if id = IsabelleID then
+    in(data_ch,x);
+    let (cake,client) = x in IsabelleTrust(cake,client) else 0
+  else ImmuneClient(id).
+
+let PTrust =
+  out(o',public_lock(private_key(IsabelleID)))
+  | Organisation
+  | !^2 RoleTrust.
+let QTrust =
+  out(o',public_lock(private_key(IsabelleID)))
+  | Organisation
+  | !^2 ImmuneRoleTrust.
+
+// no attack here
+query trace_equiv(PTrust,QTrust).
+
+
+
+let Role = // role chosen by the adversary (normal client)
+  in(id_ch,id);
+  if id = IsabelleID then
+    in(data_ch,x);
+    let (cake,client) = x in Isabelle(cake,client) else 0
+  else Client(id).
+
+let ImmuneRole = // role chosen by the adversary (careful client)
+  in(id_ch,id);
+  if id = IsabelleID then
+    in(data_ch,x);
+    let (cake,client) = x in Isabelle(cake,client) else 0
+  else ImmuneClient(id).
+
+let P =
+  out(o',public_lock(private_key(IsabelleID)))
+  | Organisation
+  | !^2 Role.
+let Q =
+  out(o',public_lock(private_key(IsabelleID)))
+  | Organisation
+  | !^2 ImmuneRole.
+
+// attack where the delivery guy impersonates Bob to poison him
+query trace_equiv(P,Q).
+
+
+
+/************************************************************
+********** PATCHED VERSION OF THE PROTOCOL (V4) *************
+************************************************************/
+
+
+// description of the process followed by Isabelle to sell a cake to a client
+// with public lock l
+let IsabelleFix(cake,l) =
+  if isPoisoned(cake) = ok then 0 else
+  in(d,chest); // receives the initiation message (locked password + id sender)
+  let (password,=l) = unlock(chest,private_key(IsabelleID)) in // this time the identity of the sender is inside the chest
+  out(d,lock((password,cake),l)). // sends back the password with the cake
+
+// description of the process followed by a client to buy a cake
+let ClientFix(id) =
+  let k = private_key(id) in // the key of the client
+  let IL = public_lock(private_key(IsabelleID)) in // the lock of Isabelle
+  new password; // the unpredictable password of the client
+  out(c,lock((password,public_lock(k)),IL)); // sending the initiation message
+  in(c,x); // receiving the response from the backery
+  let (=password,cake) = unlock(x,k) in
+  if isPoisoned(cake) = ok then out(c,KO). // client accepted a poisoned cake
+
+// an alternative version of the client that never eats the cake
+let ImmuneClientFix(id) =
+  let k = private_key(id) in // the key of the client
+  let IL = public_lock(private_key(IsabelleID)) in // the lock of Isabelle
+  new password; // the unpredictable password of the client
+  out(c,lock((password,public_lock(k)),IL)); // sending the initiation message
+  in(c,x). // receiving the response from the backery but doing nothing with it
+
+
+/*****************************
+model of the security property
+******************************/
+let RoleFix = // role chosen by the adversary (normal client)
+  in(id_ch,id);
+  if id = IsabelleID then
+    in(data_ch,x);
+    let (cake,client) = x in IsabelleFix(cake,client) else 0
+  else ClientFix(id).
+
+let ImmuneRoleFix = // role chosen by the adversary (careful client)
+  in(id_ch,id);
+  if id = IsabelleID then
+    in(data_ch,x);
+    let (cake,client) = x in IsabelleFix(cake,client) else 0
+  else ImmuneClientFix(id).
+
+// 2 sessions
+let PFix2 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^2 Organisation
+  | !^2 RoleFix.
+let QFix2 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^2 Organisation
+  | !^2 ImmuneRoleFix.
+query session_equiv(PFix2,QFix2).
+
+// 3 sessions
+let PFix3 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^3 Organisation
+  | !^3 RoleFix.
+let QFix3 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^3 Organisation
+  | !^3 ImmuneRoleFix.
+query session_equiv(PFix3,QFix3).
+
+// 4 sessions
+let PFix4 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^4 Organisation
+  | !^4 RoleFix.
+let QFix4 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^4 Organisation
+  | !^4 ImmuneRoleFix.
+query session_equiv(PFix4,QFix4).
+
+// 5 sessions
+let PFix5 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^5 Organisation
+  | !^5 RoleFix.
+let QFix5 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^5 Organisation
+  | !^5 ImmuneRoleFix.
+query session_equiv(PFix5,QFix5).
+
+// 6 sessions
+let PFix6 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^6 Organisation
+  | !^6 RoleFix.
+let QFix6 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^6 Organisation
+  | !^6 ImmuneRoleFix.
+query session_equiv(PFix6,QFix6).
+
+// 7 sessions
+let PFix7 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^7 Organisation
+  | !^7 RoleFix.
+let QFix7 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^7 Organisation
+  | !^7 ImmuneRoleFix.
+query session_equiv(PFix7,QFix7).
+
+// 8 sessions
+let PFix8 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^8 Organisation
+  | !^8 RoleFix.
+let QFix8 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^8 Organisation
+  | !^8 ImmuneRoleFix.
+query session_equiv(PFix8,QFix8).
+
+// 9 sessions
+let PFix9 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^9 Organisation
+  | !^9 RoleFix.
+let QFix9 =
+  out(o',public_lock(private_key(IsabelleID)))
+  | !^9 Organisation
+  | !^9 ImmuneRoleFix.
+query session_equiv(PFix9,QFix9).

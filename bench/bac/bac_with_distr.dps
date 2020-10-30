@@ -1,0 +1,57 @@
+fun mac/2.
+
+free Error_6300,get_challenge.
+
+fun senc/2.
+reduc sdec(senc(x,y),y) -> x.
+
+
+fun enc_key_of/1 [private].
+fun mac_key_of/1 [private].
+free distr [private].
+
+// Description of the reader role
+
+let reader(c) =
+  in(distr,keys);
+  let (k_e,k_m) = keys in
+  out(c,get_challenge);
+  in(c,xn_t);
+  new n_r;
+  new k_r;
+  let xm = senc((n_r,xn_t,k_r),k_e) in
+  out(c,(xm,mac(xm,k_m)));
+  in(c,y).
+
+// Description of the passport role
+
+let passport(c,id) =
+  let k_e = enc_key_of(id) in
+  let k_m = mac_key_of(id) in
+  out(distr,(k_e,k_m));
+  in(c,x);
+  if x = get_challenge then
+    new n_t;
+    out(c,n_t);
+    in(c,y);
+    let (xm_e,xm_m) = y in
+    if xm_m = mac(xm_e,k_m) then
+      let (xn_r,xn_t,xk_r) = sdec(xm_e,k_e) in
+        if xn_t = n_t then (
+        	new k_t;
+        	let z = senc((n_t,xn_r,k_t),k_e) in
+        	out(c,(z,mac(z,k_m)))
+        ) else out(c,Error_6300)
+      else out(c,Error_6300)
+    else out(c,Error_6300).
+
+
+free c,cp,cr.
+
+let dupl_system2 =
+  !^2 reader(cr) | new id; !^2 passport(cp,id).
+let fresh_system2 =
+  !^2 reader(cr) | !^2 new id; passport(cp,id).
+query session_incl(dupl_system2,fresh_system2). // false attack
+// query trace_incl(dupl_system2,fresh_system2). // 7min 52s
+query trace_equiv(dupl_system2+fresh_system2,fresh_system2). // 13min 12s

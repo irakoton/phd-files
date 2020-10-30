@@ -1,0 +1,316 @@
+/* Private Authentication Protocol
+
+ 1. A -> B: {Na, pub(A)}pub(B)
+ 2. B -> A: {Na, Nb, pub(B)}pub(A) if B wants to communicate with A
+            {Nb}pub(B) otherwise
+*/
+
+
+
+
+
+/* Theory for randomised asymmetric encryption */
+fun aenc/3.
+fun pk/1. // [pk(k)] is the public key corresponding to the decryption key [k]
+reduc adec(aenc(msg,rnd,pk(k)),k) -> msg.
+
+// weakening the assumptions on aenc: make it possible to test ciphers
+free ok.
+reduc test(aenc(x,y,z)) -> ok.
+
+/* weakening the assumptions on aenc: not key concealing
+NB: subsumes the previous equation and creates an attack */
+/* reduc get(aenc(x,y,z)) -> z. */
+
+// role of A. Arguments:
+// c: channel, s: secret key, p: public key of the recipient, n: nonce
+let A(c,s,p) =
+  new n; new r; out(c,aenc((n,pk(s)),r,p));
+  in(c,x);
+  let (=n,y,=p) = adec(x,s) in
+  0. // here y is supposed to be the nonce of B
+
+
+// role of B. Arguments:
+// c: channel, s: secret key, p: public key of the accepted connection, n: nonce
+let B(c,s,p) =
+  new n;
+  in(c,x);
+  let (y,=p) = adec(x,s) in
+    // accepting connection (and nonce of the recipient = y)
+    new r; out(c,aenc((y,n,pk(s)),r,p))
+  else
+    // decryption failure or refusing connection => decoy message
+    new r; out(c,aenc(n,r,pk(s))).
+
+
+/* For modelling purpose:
+    [sk] = associate each identity to its decryption key
+    [Keygen] = reveals the public key of a fresh identity to the adversary
+    [getID]  = get identity associated to public key. Makes fresh identities of
+               [Keygen] public without having to output them explicitly */
+fun sk/1 [private].
+reduc getID(pk(sk(id))) -> id.
+let Keygen(c) = new id; out(c,pk(sk(id))).
+
+free CST.
+
+
+let session(ca,cb,ida,idb) =
+  A(ca,sk(ida),pk(sk(idb))) |
+  B(cb,sk(idb),pk(sk(ida))).
+
+
+free idA,idB,idC,idD.
+free ck.
+free ca1,cb1.
+free ca2,cb2.
+free ca3,cb3.
+free ca4,cb4.
+free ca5,cb5.
+free ca6,cb6.
+free ca7,cb7.
+
+
+/************************
+****** DETERMINATE ******
+************************/
+
+// 1 session
+let P1_1 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  session(ca1,cb1,idA,idB).
+let P2_1 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  session(ca1,cb1,idC,idB).
+query trace_equiv(P1_1,P2_1).
+
+// 2 sessions
+let P1_2 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idA,idB) |
+    session(ca2,cb2,idC,idD)
+  ).
+let P2_2 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idC,idB) |
+    session(ca2,cb2,idC,idD)
+  ).
+query trace_equiv(P1_2,P2_2).
+
+// 3 sessions
+let P1_3 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idA,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC)
+  ).
+let P2_3 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idC,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC)
+  ).
+query trace_equiv(P1_3,P2_3).
+
+// 4 sessions
+let P1_4 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idA,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD)
+  ).
+let P2_4 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idC,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD)
+  ).
+query trace_equiv(P1_4,P2_4).
+
+// 5 sessions
+let P1_5 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idA,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD) |
+    session(ca5,cb5,idB,idC)
+  ).
+let P2_5 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idC,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD) |
+    session(ca5,cb5,idB,idC)
+  ).
+query trace_equiv(P1_5,P2_5).
+
+// 6 sessions
+let P1_6 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idA,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD) |
+    session(ca5,cb5,idB,idC) |
+    session(ca6,cb6,idB,idD)
+  ).
+let P2_6 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idC,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD) |
+    session(ca5,cb5,idB,idC) |
+    session(ca6,cb6,idB,idD)
+  ).
+query trace_equiv(P1_6,P2_6).
+
+// 7 sessions
+let P1_7 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idA,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD) |
+    session(ca5,cb5,idB,idC) |
+    session(ca6,cb6,idB,idD) |
+    session(ca7,cb7,idB,idA)
+  ).
+let P2_7 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca1,cb1,idC,idB) |
+    session(ca2,cb2,idC,idD) |
+    session(ca3,cb3,idA,idC) |
+    session(ca4,cb4,idA,idD) |
+    session(ca5,cb5,idB,idC) |
+    session(ca6,cb6,idB,idD) |
+    session(ca7,cb7,idB,idA)
+  ).
+query trace_equiv(P1_7,P2_7).
+
+
+
+
+/************************
+******** VANILLA ********
+************************/
+
+free ca,cb.
+
+// 1 session
+let Q1_1 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  session(ca,cb,idA,idB).
+let Q2_1 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  session(ca,cb,idC,idB).
+query trace_equiv(Q1_1,Q2_1).
+
+// 2 sessions
+let Q1_2 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca,cb,idA,idB) |
+    session(ca,cb,idC,idD)
+  ).
+let Q2_2 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca,cb,idC,idB) |
+    session(ca,cb,idC,idD)
+  ).
+query trace_equiv(Q1_2,Q2_2).
+
+// 3 sessions
+let Q1_3 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca,cb,idA,idB) |
+    session(ca,cb,idC,idD) |
+    session(ca,cb,idA,idC)
+  ).
+let Q2_3 =
+  out(ck,pk(sk(idA)));
+  out(ck,pk(sk(idB)));
+  out(ck,pk(sk(idC)));
+  out(ck,pk(sk(idD)));
+  (
+    session(ca,cb,idC,idB) |
+    session(ca,cb,idC,idD) |
+    session(ca,cb,idA,idC)
+  ).
+query trace_equiv(Q1_3,Q2_3).

@@ -1,0 +1,128 @@
+/* Version of Helios using ZKP (but not on the identity). Subject to a ballot copy attack. Revote is allowed in the model for simplicity but the attack does not take profit of it. */
+
+// randomised asymmetric encryption
+fun aenc/3.
+fun pk/1.
+reduc adec(aenc(x,r,pk(sk)),sk) -> x.
+
+// zero knowledge proofs
+fun zkp/3.
+const ok.
+reduc checkzkp(zkp(rnd,v,aenc(v,rnd,pub)), aenc(v,rnd,pub)) -> ok.
+
+// mechanism for the attacker to compromise agents (before the vote starts)
+fun compromise/1.
+reduc is_compromised(compromise(id)) -> ok.
+
+// channels
+free c.
+free internal [private].
+
+
+// publication of the authority public key and initialisation of the ballot box
+const blank.
+let init(pkE) = out(c,pkE); out(internal,(blank,blank)).
+
+// voting process
+let VoterReal(pkE,id1,id2) =
+  in(internal,ballot_box); // receiving the current state of the ballot box
+  let (vote1,vote2) = ballot_box in
+  in(c,id); // the attacker chooses the identity of the voter
+  if is_compromised(id) = ok then // case of a compromised voter
+    in(c,ballot); // the attacker chooses the ballot to be submitted
+    let (blob,zk) = ballot in
+      if checkzkp(zk,blob) = ok then  // ballot cast only if ZKP is valid
+        if (id,vote1) = (id1,blank) then out(internal,(blob,vote2))
+        else if (id,vote2) = (id2,blank) then out(internal,(vote1,blob))
+        else out(internal,ballot_box)
+      else out(internal,ballot_box)
+    else out(internal,ballot_box)
+  else // case of a honest voter
+    in(c,v); // the attacker chooses two votes: v0 = real vote, v1 = fake vote
+    let (v0,v1) = v in
+    new r;
+    let b0 = aenc(v0,r,pkE) in
+    let ballot = (id,b0,zkp(r,v0,b0)) in
+    // reveals the real ballot and casts it
+    if (id,vote1) = (id1,blank) then
+      out(c,ballot); out(internal,(b0,vote2))
+    else if (id,vote2) = (id2,blank) then
+      out(c,ballot); out(internal,(vote1,b0))
+    else out(internal,ballot_box).
+
+
+let VoterFake(pkE,id1,id2) =
+  in(internal,ballot_box); // receiving the current state of the ballot box
+  let (vote1,vote2) = ballot_box in
+  in(c,id); // the attacker chooses the identity of the voter
+  if is_compromised(id) = ok then // case of a compromised voter (cf VoterReal)
+    in(c,ballot); // the attacker chooses the ballot to be submitted
+    let (blob,zk) = ballot in
+      if checkzkp(zk,blob) = ok then  // ballot cast only if ZKP is valid
+        if (id,vote1) = (id1,blank) then out(internal,(blob,vote2))
+        else if (id,vote2) = (id2,blank) then out(internal,(vote1,blob))
+        else out(internal,ballot_box)
+      else out(internal,ballot_box)
+    else out(internal,ballot_box)
+  else // case of a honest voter
+    in(c,v); // the attacker chooses two votes: v0 = real vote, v1 = fake vote
+    let (v0,v1) = v in
+    new r0; new r1;
+    let b0 = aenc(v0,r0,pkE) in
+    let b1 = aenc(v1,r1,pkE) in
+    let ballot = (id,b1,zkp(r1,v1,b1)) in
+    // reveals the fake ballot and casts the real one
+    if (id,vote1) = (id1,blank) then
+      out(c,ballot); out(internal,(b0,vote2))
+    else if (id,vote2) = (id2,blank) then
+      out(c,ballot); out(internal,(vote1,b0))
+    else out(internal,ballot_box).
+
+
+// getting the result of the subtallies and outputing in a mixnet
+let Mixnet(skE) =
+  in(internal,ballot_box);
+  let (vote1,vote2) = ballot_box in (
+    out(c,adec(vote1,skE)) |
+    out(c,adec(vote2,skE))
+  ).
+
+
+// verification
+
+// generates the list of agents depending on how many the adversary compromise
+free A,B. // participants of the vote
+const zero. fun S/1. // Peano integers
+reduc
+  scenario(zero) -> (A,B);
+  scenario(S(zero)) -> (compromise(A),B);
+  scenario(S(S(zero))) -> (compromise(A),compromise(B)).
+
+
+// decryption key of the tallying authority
+free dec_key [private].
+
+
+// 1 ballot
+let PReal_1 =
+  let pkE = pk(dec_key) in
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (init(pkE) | !^1 VoterReal(pkE,id1,id2) | Mixnet(dec_key)).
+let PFake_1 =
+  let pkE = pk(dec_key) in
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (init(pkE) | !^1 VoterFake(pkE,id1,id2) | Mixnet(dec_key)).
+query trace_equiv(PReal_1,PFake_1).
+
+// 2 ballots => attack
+/* The voting oracle is invoked one time and the adversary copies the ballot and
+submits it in its name, which introduces a bias in the tally. */
+let PReal_2 =
+  let pkE = pk(dec_key) in
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (init(pkE) | !^2 VoterReal(pkE,id1,id2) | Mixnet(dec_key)).
+let PFake_2 =
+  let pkE = pk(dec_key) in
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (init(pkE) | !^2 VoterFake(pkE,id1,id2) | Mixnet(dec_key)).
+query trace_equiv(PReal_2,PFake_2).

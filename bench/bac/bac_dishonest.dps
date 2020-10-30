@@ -1,0 +1,121 @@
+fun mac/2.
+
+free Error_6300,get_challenge,ok.
+
+fun senc/2.
+reduc sdec(senc(x,y),y) -> x.
+
+
+// Description of the reader role
+
+let reader(c,k_e,k_m) =
+  out(c,get_challenge);
+  in(c,xn_t);
+  new n_r;
+  new k_r;
+  let xm = senc((n_r,xn_t,k_r),k_e) in
+  out(c,(xm,mac(xm,k_m)));
+  in(c,y).
+
+// Description of the passport role
+
+let passport(c,k_e,k_m) =
+  in(c,x);
+  if x = get_challenge then
+    new n_t;
+    out(c,n_t);
+    in(c,y);
+    let (xm_e,xm_m) = y in
+    if xm_m = mac(xm_e,k_m) then
+      let (xn_r,xn_t,xk_r) = sdec(xm_e,k_e) in
+        if xn_t = n_t then (
+        	new k_t;
+        	let z = senc((n_t,xn_r,k_t),k_e) in
+        	out(c,(z,mac(z,k_m)))
+        ) else out(c,Error_6300)
+      else out(c,Error_6300)
+    else out(c,Error_6300).
+
+
+free c,c_p,c_r.
+fun enc_key_of/1 [private].
+fun mac_key_of/1 [private].
+
+fun honest/1.
+reduc is_honest(honest(x)) -> ok.
+
+let dupli_system(x) = // two systems with the same seed use the same keys
+  if is_honest(x) = ok then ( // honest session
+    passport(c_p,enc_key_of(x),mac_key_of(x)) |
+    reader(c_r,enc_key_of(x),mac_key_of(x))
+  ) else let (ke,km) = x in ( // dishonest session
+    passport(c_p,ke,km) |
+    reader(c_r,ke,km)
+  ).
+
+let fresh_system(x) = // two systems with the same seed use the same keys
+  if is_honest(x) = ok then new id; ( // honest session
+    passport(c_p,enc_key_of(id),mac_key_of(id)) |
+    reader(c_r,enc_key_of(id),mac_key_of(id))
+  ) else let (ke,km) = x in ( // dishonest session
+    passport(c_p,ke,km) |
+    reader(c_r,ke,km)
+  ).
+
+
+// 2 sessions
+let dupl_system2 =
+  in(c,ids); let (id1,id2) = ids in
+  (dupli_system(id1)
+  | dupli_system(id2)).
+let fresh_system2 =
+  in(c,ids); let (id1,id2) = ids in
+  (fresh_system(id1)
+  | fresh_system(id2)).
+/* query session_incl(dupl_system2,fresh_system2). */
+query trace_equiv(dupl_system2+fresh_system2,fresh_system2).
+
+// 3 sessions
+let dupl_system3 =
+  in(c,ids); let (id1,id2,id3) = ids in
+  (dupli_system(id1)
+  | dupli_system(id2)
+  | dupli_system(id3)).
+let fresh_system3 =
+  in(c,ids); let (id1,id2,id3) = ids in
+  (fresh_system(id1)
+  | fresh_system(id2)
+  | fresh_system(id3)).
+/* query session_incl(dupl_system3,fresh_system3). */
+
+// 4 sessions
+let dupl_system4 =
+  in(c,ids); let (id1,id2,id3,id4) = ids in
+  (dupli_system(id1)
+  | dupli_system(id2)
+  | dupli_system(id3)
+  | dupli_system(id4)).
+let fresh_system4 =
+  in(c,ids); let (id1,id2,id3,id4) = ids in
+  (fresh_system(id1)
+  | fresh_system(id2)
+  | fresh_system(id3)
+  | fresh_system(id4)).
+/* query session_incl(dupl_system4,fresh_system4). */
+
+// 5 sessions
+let dupl_system5 =
+  in(c,ids); let (id1,id2,id3,id4,id5) = ids in
+  (dupli_system(id1)
+  | dupli_system(id2)
+  | dupli_system(id3)
+  | dupli_system(id4)
+  | dupli_system(id5)).
+let fresh_system5 =
+  in(c,ids); let (id1,id2,id3,id4,id5) = ids in
+  (fresh_system(id1)
+  | fresh_system(id2)
+  | fresh_system(id3)
+  | fresh_system(id4)
+  | fresh_system(id5)).
+/* query session_incl(dupl_system5,fresh_system5). */

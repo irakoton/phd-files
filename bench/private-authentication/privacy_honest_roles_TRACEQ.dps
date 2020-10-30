@@ -1,0 +1,304 @@
+/* Private Authentication Protocol
+
+ 1. A -> B: {Na, pub(A)}pub(B)
+ 2. B -> A: {Na, Nb, pub(B)}pub(A) if B wants to communicate with A
+            {Nb}pub(B) otherwise
+*/
+
+
+
+
+/* Theory for randomised asymmetric encryption */
+fun aenc/3.
+fun pk/1. // [pk(k)] is the public key corresponding to the decryption key [k]
+reduc adec(aenc(msg,rnd,pk(k)),k) -> msg.
+
+// weakening the assumptions on aenc: make it possible to test ciphers
+free ok.
+reduc test(aenc(x,y,z)) -> ok.
+
+/* weakening the assumptions on aenc: not key concealing
+NB: subsumes the previous equation and creates an attack */
+/* reduc get(aenc(x,y,z)) -> z. */
+
+// role of A. Arguments:
+// c: channel, s: secret key, p: public key of the recipient, n: nonce
+let A(c,s,p,n) =
+  new r; out(c,aenc((n,pk(s)),r,p));
+  in(c,x);
+  let (=n,y,=p) = adec(x,s) in
+  0. // here y is supposed to be the nonce of B
+
+
+// role of B. Arguments:
+// c: channel, s: secret key, p: public key of the accepted connection, n: nonce
+let B(c,s,p,n) =
+  in(c,x);
+  let (y,=p) = adec(x,s) in
+    // accepting connection (and nonce of the recipient = y)
+    new r; out(c,aenc((y,n,pk(s)),r,p))
+  else
+    // decryption failure or refusing connection => decoy message
+    new r; new decoy; out(c,aenc(decoy,r,pk(s))).
+
+
+/* For modelling purpose:
+    [sk] = associate each identity to its decryption key
+    [Keygen] = reveals the public key of a fresh identity to the adversary
+    [getID]  = get identity associated to public key. Makes fresh identities of
+               [Keygen] public without having to output them explicitly */
+fun sk/1 [private].
+reduc getID(pk(sk(id))) -> id.
+reduc is_honest(pk(sk(id))) -> ok.
+
+let Keygen(c) = new id; out(c,pk(sk(id))).
+
+
+
+free CST,send,rcpt.
+
+// one role, only honest agents
+let HonestRole(c,role,id1,id2,N) =
+  if role = send then A(c,sk(id1),pk(sk(id2)),N)
+  else if role = rcpt then B(c,sk(id1),pk(sk(id2)),N).
+
+let Role_adv(c,data_ch) =
+  in(data_ch,data);
+  let (role,id1,id2,N) = data in
+  HonestRole(c,role,id1,id2,N).
+
+let Role_cst(c,data_ch) =
+  in(data_ch,data);
+  let (role,id1,id2,N) = data in
+  HonestRole(c,role,CST,CST,CST).
+
+
+free ck.
+free ck1,ck1',c1,data_ch1.
+free ck2,ck2',c2,data_ch2.
+free ck3,ck3',c3,data_ch3.
+free ck4,ck4',c4,data_ch4.
+free ck5,ck5',c5,data_ch5.
+free ck6,ck6',c6,data_ch6.
+free ck7,ck7',c7,data_ch7.
+free ck8,ck8',c8,data_ch8.
+free ck9,ck9',c9,data_ch9.
+free ck10,ck10',c10,data_ch10.
+free ck11,ck11',c11,data_ch11.
+
+
+let role_adv(ck,ck',c,data_ch) =
+  Keygen(ck) | Keygen(ck') | Role_adv(c,data_ch).
+let role_cst(ck,ck',c,data_ch) =
+  Keygen(ck) | Keygen(ck') | Role_cst(c,data_ch).
+
+
+// 1 role
+let P1_1 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1).
+let P2_1 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1).
+query trace_equiv(P1_1,P2_1).
+
+// 2 roles
+let P1_2 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2).
+let P2_2 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2).
+query trace_equiv(P1_2,P2_2).
+
+// 3 roles
+let P1_3 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3).
+let P2_3 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3).
+query trace_equiv(P1_3,P2_3).
+
+// 4 roles
+let P1_4 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4).
+let P2_4 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4).
+query trace_equiv(P1_4,P2_4).
+
+// 5 roles
+let P1_5 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5).
+let P2_5 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5).
+query trace_equiv(P1_5,P2_5).
+
+
+// 6 roles
+let P1_6 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5)
+  | role_adv(ck6,ck6',c6,data_ch6).
+let P2_6 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5)
+  | role_cst(ck6,ck6',c6,data_ch6).
+query trace_equiv(P1_6,P2_6).
+
+// 7 roles
+let P1_7 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5)
+  | role_adv(ck6,ck6',c6,data_ch6)
+  | role_adv(ck7,ck7',c7,data_ch7).
+let P2_7 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5)
+  | role_cst(ck6,ck6',c6,data_ch6)
+  | role_cst(ck7,ck7',c7,data_ch7).
+query trace_equiv(P1_7,P2_7).
+
+// 8 roles
+let P1_8 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5)
+  | role_adv(ck6,ck6',c6,data_ch6)
+  | role_adv(ck7,ck7',c7,data_ch7)
+  | role_adv(ck8,ck8',c8,data_ch8).
+let P2_8 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5)
+  | role_cst(ck6,ck6',c6,data_ch6)
+  | role_cst(ck7,ck7',c7,data_ch7)
+  | role_cst(ck8,ck8',c8,data_ch8).
+query trace_equiv(P1_8,P2_8).
+
+// 9 roles
+let P1_9 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5)
+  | role_adv(ck6,ck6',c6,data_ch6)
+  | role_adv(ck7,ck7',c7,data_ch7)
+  | role_adv(ck8,ck8',c8,data_ch8)
+  | role_adv(ck9,ck9',c9,data_ch9).
+let P2_9 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5)
+  | role_cst(ck6,ck6',c6,data_ch6)
+  | role_cst(ck7,ck7',c7,data_ch7)
+  | role_cst(ck8,ck8',c8,data_ch8)
+  | role_cst(ck9,ck9',c9,data_ch9).
+query trace_equiv(P1_9,P2_9).
+
+// 10 roles
+let P1_10 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5)
+  | role_adv(ck6,ck6',c6,data_ch6)
+  | role_adv(ck7,ck7',c7,data_ch7)
+  | role_adv(ck8,ck8',c8,data_ch8)
+  | role_adv(ck9,ck9',c9,data_ch9)
+  | role_adv(ck10,ck10',c10,data_ch10).
+let P2_10 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5)
+  | role_cst(ck6,ck6',c6,data_ch6)
+  | role_cst(ck7,ck7',c7,data_ch7)
+  | role_cst(ck8,ck8',c8,data_ch8)
+  | role_cst(ck9,ck9',c9,data_ch9)
+  | role_cst(ck10,ck10',c10,data_ch10).
+query trace_equiv(P1_10,P2_10).
+
+// 11 roles
+let P1_11 =
+  out(ck,pk(sk(CST)))
+  | role_adv(ck1,ck1',c1,data_ch1)
+  | role_adv(ck2,ck2',c2,data_ch2)
+  | role_adv(ck3,ck3',c3,data_ch3)
+  | role_adv(ck4,ck4',c4,data_ch4)
+  | role_adv(ck5,ck5',c5,data_ch5)
+  | role_adv(ck6,ck6',c6,data_ch6)
+  | role_adv(ck7,ck7',c7,data_ch7)
+  | role_adv(ck8,ck8',c8,data_ch8)
+  | role_adv(ck9,ck9',c9,data_ch9)
+  | role_adv(ck10,ck10',c10,data_ch10)
+  | role_adv(ck11,ck11',c11,data_ch11).
+let P2_11 =
+  out(ck,pk(sk(CST)))
+  | role_cst(ck1,ck1',c1,data_ch1)
+  | role_cst(ck2,ck2',c2,data_ch2)
+  | role_cst(ck3,ck3',c3,data_ch3)
+  | role_cst(ck4,ck4',c4,data_ch4)
+  | role_cst(ck5,ck5',c5,data_ch5)
+  | role_cst(ck6,ck6',c6,data_ch6)
+  | role_cst(ck7,ck7',c7,data_ch7)
+  | role_cst(ck8,ck8',c8,data_ch8)
+  | role_cst(ck9,ck9',c9,data_ch9)
+  | role_cst(ck10,ck10',c10,data_ch10)
+  | role_cst(ck11,ck11',c11,data_ch11).
+query trace_equiv(P1_11,P2_11).

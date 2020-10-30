@@ -1,0 +1,143 @@
+// randomised asymmetric encryption
+fun aenc/3.
+fun pk/1.
+reduc adec(aenc(x,r,pk(sk)),sk) -> x.
+
+// zero knowledge proofs
+fun zkp/3.
+const ok.
+reduc checkzkp(zkp(rnd,v,aenc(v,rnd,pub)), aenc(v,rnd,pub)) -> ok.
+
+// mechanism for the attacker to compromise agents (before the vote starts)
+fun compromise/1.
+reduc is_compromised(compromise(id)) -> ok.
+
+// channels
+free c,vote,cast.
+free internal [private].
+
+const sk [private]. // secret key of the election
+
+// publication of the authority public key and initialisation of the ballot box
+const blank.
+let initL = out(c,pk(sk)); out(internal,(blank,blank)).
+let initR = out(c,pk(sk)); out(internal,(blank,blank,blank,blank)).
+
+
+// voting oracle (real)
+let OracleL(id1,id2) =
+  in(internal,ballot_box);
+  let (vote1,vote2) = ballot_box in
+  in(c,id); // the attacker chooses the identity of the voter
+  if is_compromised(id) = ok then
+    in(cast,ballot);
+    let (b,zk) = ballot in
+      if checkzkp(zk,b) = ok then  // ballot cast only if ZKP is valid
+        if (id,vote1) = (id1,blank) then
+          if b = vote2 then out(internal,ballot_box)
+          else out(internal,(b,vote2))
+        else if (id,vote2) = (id2,blank) then
+          if b = vote1 then out(internal,ballot_box)
+          else out(internal,(vote1,b))
+        else out(internal,ballot_box)
+      else out(internal,ballot_box)
+    else out(internal,ballot_box)
+  else // checking the voter is honest
+    in(vote,v); // the attacker chooses two votes: v0 = real, v1 = fake
+    let (v0,v1) = v in
+    new r;
+    let b0 = aenc(v0,r,pk(sk)) in
+    let ballot = (id,b0,zkp(r,v0,b0)) in
+    // reveals the real ballot and casts it
+    if (id,vote1) = (id1,blank) then
+      out(vote,ballot); out(internal,(b0,vote2))
+    else if (id,vote2) = (id2,blank) then
+      out(vote,ballot); out(internal,(vote1,b0))
+    else out(internal,ballot_box).
+
+
+// voting oracle (fake)
+let OracleR(id1,id2) =
+  in(internal,ballot_box);
+  let (vote1L,vote2L,vote1R,vote2R) = ballot_box in
+  in(c,id); // the attacker chooses the identity of the voter
+  if is_compromised(id) = ok then
+    in(cast,ballot);
+    let (b,zk) = ballot in
+      if checkzkp(zk,b) = ok then  // ballot cast only if ZKP is valid
+        if (id,vote1R) = (id1,blank) then
+          if b = vote2R then out(internal,ballot_box)
+          else out(internal,(b,vote2L,b,vote2R))
+        else if (id,vote2R) = (id2,blank) then
+          if b = vote1R then out(internal,ballot_box)
+          else out(internal,(vote1L,b,vote1R,b))
+        else out(internal,ballot_box)
+      else out(internal,ballot_box)
+    else out(internal,ballot_box)
+  else // checking the voter is honest
+    in(vote,v); // the attacker chooses two votes: v0 = real, v1 = fake
+    let (v0,v1) = v in
+    new r0; new r1;
+    let b0 = aenc(v0,r0,pk(sk)) in
+    let b1 = aenc(v1,r1,pk(sk)) in
+    let ballot = (id,b1,zkp(r1,v1,b1)) in
+    // reveals the fake ballot and casts the real one
+    if (id,vote1R) = (id1,blank) then
+      out(vote,ballot); out(internal,(b0,vote2L,b1,vote2R))
+    else if (id,vote2R) = (id2,blank) then
+      out(vote,ballot); out(internal,(vote1L,b0,vote1R,b1))
+    else out(internal,ballot_box).
+
+
+// getting the result of the subtallies and outputing in a mixnet
+let MixnetL =
+  in(internal,ballot_box);
+  let (vote1,vote2) = ballot_box in (
+    out(c,adec(vote1,sk)) |
+    out(c,adec(vote2,sk))
+  ).
+
+let MixnetR =
+  in(internal,ballot_box);
+  let (vote1L,vote2L,vote1R,vote2R) = ballot_box in (
+    out(c,adec(vote1L,sk)) |
+    out(c,adec(vote2L,sk))
+  ).
+
+
+// verification
+
+// generates the list of agents depending on how many the adversary compromise
+free A,B. // participants of the vote
+const zero. fun S/1. // Peano integers
+reduc
+  scenario(zero) -> (A,B);
+  scenario(S(zero)) -> (compromise(A),B).
+
+
+// 1 ballot
+let PReal_1 =
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (initL | !^1 OracleL(id1,id2) | MixnetL).
+let PFake_1 =
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (initR | !^1 OracleR(id1,id2) | MixnetR).
+query trace_equiv(PReal_1,PFake_1).
+
+// 2 ballots
+let PReal_2 =
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (initL | !^2 OracleL(id1,id2) | MixnetL).
+let PFake_2 =
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (initR | !^2 OracleR(id1,id2) | MixnetR).
+query trace_equiv(PReal_2,PFake_2).
+
+// 3 ballots
+let PReal_3 =
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (initL | !^3 OracleL(id1,id2) | MixnetL).
+let PFake_3 =
+  in(c,nb_compromised); let (id1,id2) = scenario(nb_compromised) in
+  (initR | !^3 OracleR(id1,id2) | MixnetR).
+query trace_equiv(PReal_3,PFake_3).

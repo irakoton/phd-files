@@ -1,0 +1,129 @@
+/* Private Authentication Protocol
+
+ 1. A -> B: {Na, pub(A)}pub(B)
+ 2. B -> A: {Na, Nb, pub(B)}pub(A) if B wants to communicate with A
+            {Nb}pub(B) otherwise
+*/
+
+
+/* Theory for randomised asymmetric encryption */
+fun aenc/3.
+fun pk/1. // [pk(k)] is the public key corresponding to the decryption key [k]
+reduc adec(aenc(msg,rnd,pk(k)),k) -> msg.
+
+// weakening the assumptions on aenc: make it possible to test ciphers
+free ok.
+reduc test(aenc(x,y,z)) -> ok.
+
+// membership test
+reduc
+  mem(x1,(x1,x2)) -> ok;
+  mem(x2,(x1,x2)) -> ok.
+
+// role of A. Arguments:
+// c: channel, s: secret key, p: public key of the recipient, n: nonce
+let A(c,s,p,n) =
+  new r; out(c,aenc((n,pk(s)),r,p));
+  in(c,x);
+  let (=n,y,=p) = adec(x,s) in
+  0. // here y is supposed to be the nonce of B
+
+
+// role of B. Arguments:
+// c: channel, s: secret key, p: public key of the accepted connection, n: nonce
+let B(c,s,pks,n) =
+  in(c,x);
+  let (y,p) = adec(x,s) in
+    if mem(p,pks) = ok then
+      // accepting connection (and nonce of the recipient = y)
+      new r; out(c,aenc((y,n,pk(s)),r,p))
+    else
+      // decryption failure or refusing connection => decoy message
+      new r; new decoy; out(c,aenc(decoy,r,pk(s)))
+  else new r; new decoy; out(c,aenc(decoy,r,pk(s))).
+
+
+/* For modelling purpose:
+    [sk] = associate each identity to its decryption key
+    [Keygen] = reveals the public key of a fresh identity to the adversary
+    [getID]  = get identity associated to public key. Makes fresh identities of
+               [Keygen] public without having to output them explicitly */
+fun sk/1 [private].
+reduc getID(pk(sk(id))) -> id.
+reduc is_honest(pk(sk(id))) -> ok.
+
+let Keygen(c) = new id; out(c,pk(sk(id))).
+
+
+
+free CST,send,rcpt.
+
+let Role_adv(c,data_ch) =
+  in(data_ch,data);
+  let (role,id,pks,N) = data in
+  if role = send then A(c,sk(id),pks,N)
+  else if role = rcpt then
+    let (pk1,pk2) = pks in // force that a pair is sent
+    B(c,sk(id),pks,N).
+
+let Role_cst(c,data_ch) =
+  in(data_ch,data);
+  let (role,id,pks,N) = data in
+  if role = send then
+    if is_honest(pks) = ok then A(c,sk(CST),pk(sk(CST)),CST)
+    else A(c,sk(id),pks,N)
+  else if role = rcpt then
+    let (pk1,pk2) = pks in
+    if is_honest(pk1) = ok then
+      if is_honest(pk2) = ok then
+        B(c,sk(CST), (pk(sk(CST)),pk(sk(CST))), CST)
+      else B(c,sk(id), (pk(sk(CST)),pk2), N)
+    else B(c,sk(id),pks,N).
+
+
+free ck,ck0,c,data_ch.
+
+
+// 1 role
+let P1_1 =
+  out(ck,pk(sk(CST)))
+  | !^2 Keygen(ck0)
+  | !^1 Role_adv(c,data_ch).
+let P2_1 =
+  out(ck,pk(sk(CST)))
+  | !^2 Keygen(ck0)
+  | !^1 Role_cst(c,data_ch).
+query session_equiv(P1_1,P2_1).
+
+// 2 roles
+let P1_2 =
+  out(ck,pk(sk(CST)))
+  | !^4 Keygen(ck0)
+  | !^2 Role_adv(c,data_ch).
+let P2_2 =
+  out(ck,pk(sk(CST)))
+  | !^4 Keygen(ck0)
+  | !^2 Role_cst(c,data_ch).
+query session_equiv(P1_2,P2_2).
+
+// 3 roles
+let P1_3 =
+  out(ck,pk(sk(CST)))
+  | !^6 Keygen(ck0)
+  | !^3 Role_adv(c,data_ch).
+let P2_3 =
+  out(ck,pk(sk(CST)))
+  | !^6 Keygen(ck0)
+  | !^3 Role_cst(c,data_ch).
+query session_equiv(P1_3,P2_3).
+
+// 4 roles
+let P1_4 =
+  out(ck,pk(sk(CST)))
+  | !^8 Keygen(ck0)
+  | !^4 Role_adv(c,data_ch).
+let P2_4 =
+  out(ck,pk(sk(CST)))
+  | !^8 Keygen(ck0)
+  | !^4 Role_cst(c,data_ch).
+query session_equiv(P1_4,P2_4).
